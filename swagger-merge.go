@@ -8,12 +8,17 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 func main() {
 	var base = flag.String("base", "", "Base swagger file name")
 	var path = flag.String("path", ".", "Path to recursivly scan for swagger files")
 	var match = flag.String("match", "*.swagger.json", "Format of swagger filenames")
+
+	var version = flag.String("version", "", "Version of this API specification")
+	var title = flag.String("title", "", "Title for this API")
+
 	flag.Parse()
 
 	var err error
@@ -27,6 +32,21 @@ func main() {
 		}
 	}
 
+	if so == nil {
+		so = &SwaggerObject{}
+	}
+	if so.Info == nil {
+		so.Info = &InfoObject{}
+	}
+
+	if *version != "" {
+		so.Info.Version = *version
+	}
+
+	if *title != "" {
+		so.Info.Title = *title
+	}
+
 	err = filepath.Walk(*path, func(filename string, info os.FileInfo, err error) error {
 		ok, err := filepath.Match(*match, info.Name())
 		if err != nil {
@@ -34,15 +54,8 @@ func main() {
 			return err
 		}
 		if ok {
-			if so == nil {
-				so, err = Read(filename)
-				if err != nil {
-					return err
-				}
-			} else {
-				if err = so.Merge(filename); err != nil {
-					return err
-				}
+			if err = so.Merge(filename); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -50,6 +63,10 @@ func main() {
 
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if so.Info.Version == "" {
+		so.Info.Version = time.Now().Format("20060102150405")
 	}
 
 	err = so.Output()
@@ -76,6 +93,13 @@ func (so *SwaggerObject) Merge(filename string) error {
 	if err != nil {
 		return err
 	}
+
+	if so.Swagger == "" {
+		so.Swagger = swf.Swagger
+	}
+	so.Schemes = mergeSlice(so.Schemes, swf.Schemes)
+	so.Consumes = mergeSlice(so.Consumes, swf.Consumes)
+	so.Produces = mergeSlice(so.Consumes, swf.Produces)
 
 	if so.Paths == nil {
 		so.Paths = swf.Paths
@@ -142,4 +166,20 @@ func Read(filename string) (*SwaggerObject, error) {
 		return nil, err
 	}
 	return swf, nil
+}
+
+func mergeSlice(target []string, source []string) []string {
+    for _, s := range source {
+		var present bool
+		for _, t := range target {
+        	if s == t {
+				present = true
+			}
+		}
+		if !present {
+			target = append(target, s)
+		}
+    }
+	
+	return target
 }
